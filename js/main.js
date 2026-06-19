@@ -697,8 +697,9 @@ class MainGame {
     drawPerspectiveTableCards() {
         // 我们在 3D 透视台面中绘制牌堆
         // 核心透视投影数学：
-        const cardW = 54 * scaleX;
-        const cardH = 70 * scaleY;
+        const cardW = 60 * scaleX;
+        const cardH = 78 * scaleY;
+        const perspectiveYScale = 0.84;
         
         const tableCenterX = canvas.width / 2;
         const tableBaseY = canvas.height * 0.44; // 平铺台面原点Y
@@ -719,23 +720,24 @@ class MainGame {
             // 平铺透视倾斜偏角
             const skew_x = nx + ny_tilt * 0.16;
 
-            const renderX = tableCenterX + skew_x * 140 * scaleX;
-            const renderY = tableBaseY + ny_tilt * 105 * scaleY - card.level * 4 * scaleY;
+            const renderX = Math.round(tableCenterX + skew_x * 140 * scaleX);
+            const renderY = Math.round(tableBaseY + ny_tilt * 105 * scaleY - card.level * 4 * scaleY);
 
-            // 记录当前卡牌的屏幕投射包围盒，用于触控判定 (高度乘以 0.72 变形系数以符合真实显示尺寸)
-            const actualH = cardH * scale * 0.72;
+            // 记录当前卡牌的屏幕投射包围盒，用于触控判定。
+            const actualW = cardW * scale;
+            const actualH = cardH * scale * perspectiveYScale;
             card.screenRect = {
-                x: renderX - (cardW * scale) / 2,
+                x: renderX - actualW / 2,
                 y: renderY - actualH / 2,
-                w: cardW * scale,
+                w: actualW,
                 h: actualH
             };
 
             ctx.save();
             ctx.translate(renderX, renderY);
             
-            // 强行应用仿射倾斜，让矩形完美斜躺在桌面上
-            ctx.transform(1, -0.06, 0.12, 0.72 * scale, 0, 0);
+            // 轻量透视即可，过度压扁会让卡牌图和文字发糊。
+            ctx.transform(scale, -0.035 * scale, 0.08 * scale, perspectiveYScale * scale, 0, 0);
 
             // 1. 绘制卡牌背景图与阴影
             const cardBgKey = card.isBlocked ? 'card_locked_bg' : 'card_bg';
@@ -772,32 +774,35 @@ class MainGame {
                 this.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 3, false, true);
             }
 
-            // 3. 药材名称与插画
+            // 3. 药材名称与插图。文字和药材图不参与透视矩阵，优先保证清晰度。
+            ctx.restore();
+
             const herb = HERB_DATABASE[card.typeId];
+            const contentW = actualW;
+            const contentH = actualH;
             
             // 星级与名称
             ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${8 * scaleY}px serif`;
+            ctx.font = `bold ${9 * scaleY}px serif`;
             ctx.textAlign = 'center';
-            ctx.fillText(herb.name, 0, -cardH / 2 + 13 * scaleY);
+            ctx.fillText(herb.name, renderX, renderY - contentH * 0.33);
             
             ctx.fillStyle = '#8c6e2b';
-            ctx.font = `${6 * scaleY}px sans-serif`;
-            ctx.fillText(herb.stars, 0, cardH / 2 - 4 * scaleY);
+            ctx.font = `${7 * scaleY}px sans-serif`;
+            ctx.fillText(herb.stars, renderX, renderY + contentH * 0.39);
 
             // 绘制本草 PNG 插图
             const imgHerb = this.loadedImages[Object.keys(ASSETS_TO_LOAD)[card.typeId + 3]];
             if (imgHerb) {
-                ctx.drawImage(imgHerb, -18 * scaleX, -16 * scaleY, 36 * scaleX, 36 * scaleY);
+                const herbSize = Math.min(42 * scaleX, contentW * 0.62);
+                ctx.drawImage(imgHerb, renderX - herbSize / 2, renderY - herbSize * 0.36, herbSize, herbSize);
             }
             
             // 被遮挡的卡牌在插图之上再覆盖一层半透明暗灰，显示“锁定”状态，但仍保持可见
             if (card.isBlocked) {
                 ctx.fillStyle = 'rgba(20, 20, 25, 0.55)';
-                this.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 3, true, false);
+                this.roundRect(renderX - contentW / 2, renderY - contentH / 2, contentW, contentH, 3 * scaleX, true, false);
             }
-
-            ctx.restore();
         });
     }
 
