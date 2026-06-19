@@ -46,6 +46,7 @@
     "disableSWC": true
   },
   "compileType": "game",
+  "cloudfunctionRoot": "cloudfunctions/",
   "libVersion": "latest",
   "appid": "wx0f12be983ca79894",
   "projectname": "渡劫丹师-微信原生小游戏",

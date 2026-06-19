@@ -2,6 +2,7 @@
 import { MatchEngine, HERB_DATABASE, LEVEL_CONFIGS } from './match-engine.js';
 import { RefinePhysics } from './refine-physics.js';
 import { getCultivationTitle, getLobbyLevelIds, getReviveTargetState } from './game-rules.js';
+import { LeaderboardService } from './leaderboard-service.js';
 
 // --- 1. 微信原生小游戏组件系统 ---
 const canvas = wx.createCanvas();
@@ -69,6 +70,8 @@ const ASSETS_TO_LOAD = {
 };
 
 const REVIVE_AD_UNIT_ID = '';
+const CLOUD_ENV_ID = '';
+const DAILY_LEADERBOARD_LEVEL_ID = 3;
 
 class AudioManager {
     constructor() {
@@ -124,7 +127,7 @@ class AudioManager {
 
 class MainGame {
     constructor() {
-        this.gameState = 'LOBBY'; // LOBBY, PLAYING, REFINING, FAIL, VICTORY, POSTER
+        this.gameState = 'LOBBY'; // LOBBY, PLAYING, REFINING, FAIL, VICTORY, POSTER, LEADERBOARD
         this.loadedImages = {};
         this.currentLevelId = 0;
         
@@ -141,6 +144,11 @@ class MainGame {
         this.exp = parseInt(wx.getStorageSync('liandan_exp')) || 0;
         this.loadingProgress = 0;
         this.lastFailedState = null;
+        this.leaderboard = new LeaderboardService(wx, CLOUD_ENV_ID);
+        this.leaderboardEntries = [];
+        this.leaderboardStatus = '排行榜未加载';
+        this.leaderboardLoading = false;
+        this.lastLeaderboardSubmitStatus = '';
 
         // BGM 播放器初始化
         this.audio = new AudioManager();
@@ -275,6 +283,7 @@ class MainGame {
         this.hintTypeId = -1;
         this.failReason = "";
         this.lastFailedState = null;
+        this.lastLeaderboardSubmitStatus = "";
         this.triggerHaptic(false);
         this.audio.playBGM('PLAYING');
     }
@@ -357,6 +366,9 @@ class MainGame {
             case 'POSTER':
                 this.renderPosterScreen();
                 break;
+            case 'LEADERBOARD':
+                this.renderLeaderboardScreen();
+                break;
         }
     }
 
@@ -424,8 +436,8 @@ class MainGame {
         // 3. 菜单按钮排布
         const btnW = 200 * scaleX;
         const btnH = 40 * scaleY;
-        const startY = canvas.height * 0.55;
-        const gap = 16 * scaleY;
+        const startY = canvas.height * 0.48;
+        const gap = 12 * scaleY;
 
         const levelLabels = {
             0: '初入丹途 (教学关)',
@@ -433,7 +445,8 @@ class MainGame {
             2: '常驻挑战 (第二炉)',
             3: '每日全服挑战'
         };
-        getLobbyLevelIds(LEVEL_CONFIGS).forEach((levelId, idx) => {
+        const levelIds = getLobbyLevelIds(LEVEL_CONFIGS);
+        levelIds.forEach((levelId, idx) => {
             const isSpecial = LEVEL_CONFIGS[levelId].dailyChallenge === true;
             this.drawLobbyButton(
                 canvas.width / 2 - btnW / 2,
@@ -445,6 +458,16 @@ class MainGame {
                 isSpecial
             );
         });
+
+        this.drawLobbyButton(
+            canvas.width / 2 - btnW / 2,
+            startY + (btnH + gap) * levelIds.length,
+            btnW,
+            btnH,
+            '全服丹榜',
+            () => this.openLeaderboard(),
+            true
+        );
     }
 
     drawLobbyButton(x, y, w, h, text, callback, isSpecial = false) {
@@ -1473,6 +1496,13 @@ class MainGame {
         ctx.font = `bold ${12 * scaleY}px serif`;
         ctx.fillText(`总分: ${this.score.toLocaleString()}`, cX, scrollY + 215 * scaleY);
 
+        ctx.fillStyle = '#7b5b3f';
+        ctx.font = `${8 * scaleY}px sans-serif`;
+        const submitStatus = this.currentLevelId === DAILY_LEADERBOARD_LEVEL_ID
+            ? (this.lastLeaderboardSubmitStatus || '正在同步全服丹榜...')
+            : '每日全服挑战成绩可入榜';
+        ctx.fillText(submitStatus, cX, scrollY + 236 * scaleY);
+
         // 按钮并排摆在卷轴下方
         const btnY = scrollY + scrollH + 15 * scaleY;
         const btnW = 90 * scaleX;
@@ -1501,6 +1531,99 @@ class MainGame {
         ctx.font = `bold ${11 * scaleY}px serif`;
         ctx.fillText('🚪 返回', cX + 15 * scaleX + btnW / 2, btnY + 20 * scaleY);
         this.touchZones.push({ x: cX + 15 * scaleX, y: btnY, w: btnW, h: btnH, callback: () => this.backToLobby() });
+
+        if (this.currentLevelId === DAILY_LEADERBOARD_LEVEL_ID) {
+            this.drawLobbyButton(cX - 80 * scaleX, btnY + 44 * scaleY, 160 * scaleX, 30 * scaleY, '查看全服丹榜', () => this.openLeaderboard(), true);
+        }
+    }
+
+    async openLeaderboard() {
+        this.gameState = 'LEADERBOARD';
+        await this.loadLeaderboard();
+    }
+
+    async loadLeaderboard() {
+        this.leaderboardLoading = true;
+        this.leaderboardStatus = '正在读取全服丹榜...';
+        this.leaderboardEntries = [];
+
+        if (!this.leaderboard.isAvailable()) {
+            this.leaderboardLoading = false;
+            this.leaderboardStatus = '云开发未配置，无法读取全服丹榜';
+            return;
+        }
+
+        try {
+            const result = await this.leaderboard.getDailyLeaderboard({
+                levelId: DAILY_LEADERBOARD_LEVEL_ID,
+                limit: 50
+            });
+            this.leaderboardLoading = false;
+            if (!result || !result.ok) {
+                this.leaderboardStatus = '全服丹榜读取失败';
+                return;
+            }
+            this.leaderboardEntries = result.entries || [];
+            this.leaderboardStatus = this.leaderboardEntries.length ? '' : '今日暂无上榜记录';
+        } catch (err) {
+            console.warn('读取排行榜失败:', err);
+            this.leaderboardLoading = false;
+            this.leaderboardStatus = '全服丹榜读取失败';
+        }
+    }
+
+    renderLeaderboardScreen() {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const w = canvas.width - 34 * scaleX;
+        const h = Math.min(460 * scaleY, canvas.height - 96 * scaleY);
+        const x = (canvas.width - w) / 2;
+        const y = (canvas.height - h) / 2;
+
+        ctx.fillStyle = '#ebdcb2';
+        ctx.strokeStyle = '#1c1511';
+        ctx.lineWidth = 3 * scaleX;
+        this.roundRect(x, y, w, h, 8 * scaleX, true, true);
+
+        ctx.fillStyle = '#4e2712';
+        ctx.font = `bold ${20 * scaleY}px serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('全服丹榜', canvas.width / 2, y + 38 * scaleY);
+
+        ctx.fillStyle = '#7b5b3f';
+        ctx.font = `${10 * scaleY}px sans-serif`;
+        ctx.fillText('每日全服挑战 · 今日最高分', canvas.width / 2, y + 58 * scaleY);
+
+        if (this.leaderboardStatus) {
+            ctx.fillStyle = '#5d3f2e';
+            ctx.font = `${12 * scaleY}px sans-serif`;
+            ctx.fillText(this.leaderboardStatus, canvas.width / 2, y + 116 * scaleY);
+        }
+
+        const listX = x + 22 * scaleX;
+        let rowY = y + 88 * scaleY;
+        const rowH = 28 * scaleY;
+        const visibleRows = Math.floor((h - 150 * scaleY) / rowH);
+        const rows = this.leaderboardEntries.slice(0, visibleRows);
+
+        rows.forEach(entry => {
+            ctx.fillStyle = entry.rank <= 3 ? 'rgba(212, 175, 55, 0.16)' : 'rgba(255, 255, 255, 0.18)';
+            this.roundRect(listX, rowY - 18 * scaleY, w - 44 * scaleX, 23 * scaleY, 4 * scaleX, true, false);
+
+            ctx.fillStyle = '#3e2723';
+            ctx.font = `bold ${11 * scaleY}px sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(`#${entry.rank}`, listX + 10 * scaleX, rowY);
+            ctx.fillText(entry.nickname, listX + 58 * scaleX, rowY);
+
+            ctx.textAlign = 'right';
+            ctx.fillText(String(entry.score), listX + w - 58 * scaleX, rowY);
+            rowY += rowH;
+        });
+
+        this.drawLobbyButton(canvas.width / 2 - 86 * scaleX, y + h - 46 * scaleY, 80 * scaleX, 30 * scaleY, '刷新', () => this.loadLeaderboard());
+        this.drawLobbyButton(canvas.width / 2 + 6 * scaleX, y + h - 46 * scaleY, 80 * scaleX, 30 * scaleY, '返回', () => this.backToLobby());
     }
 
     // --- 9. 界面绘制：修仙海报 (Poster) ---
@@ -1771,10 +1894,40 @@ class MainGame {
             const expReward = this.currentLevelId === 3 ? 120 : (this.currentLevelId === 0 ? 20 : 50);
             this.exp += expReward;
             wx.setStorageSync('liandan_exp', this.exp);
+            this.submitVictoryScore();
         } else {
             this.lastFailedState = failedState;
             this.triggerHaptic(true);
             this.failReason = reason;
+        }
+    }
+
+    async submitVictoryScore() {
+        if (this.currentLevelId !== DAILY_LEADERBOARD_LEVEL_ID) {
+            this.lastLeaderboardSubmitStatus = '每日全服挑战成绩可入榜';
+            return;
+        }
+
+        if (!this.leaderboard.isAvailable()) {
+            this.lastLeaderboardSubmitStatus = '云开发未配置，成绩未入榜';
+            return;
+        }
+
+        try {
+            const result = await this.leaderboard.submitScore({
+                score: this.score,
+                levelId: this.currentLevelId,
+                nickname: ''
+            });
+
+            if (result && result.ok) {
+                this.lastLeaderboardSubmitStatus = result.updated ? '成绩已同步全服丹榜' : '已有更高成绩在榜';
+            } else {
+                this.lastLeaderboardSubmitStatus = '成绩同步失败';
+            }
+        } catch (err) {
+            console.warn('提交排行榜成绩失败:', err);
+            this.lastLeaderboardSubmitStatus = '成绩同步失败';
         }
     }
 
