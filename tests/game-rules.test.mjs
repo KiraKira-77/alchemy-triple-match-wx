@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
     getCultivationTitle,
+    getPlayerProgressBadge,
     getLobbyLevelIds,
     getEffectiveLevelSeed,
     getReviveTargetState
@@ -13,6 +14,13 @@ test('cultivation title uses the highest matching threshold', () => {
     assert.equal(getCultivationTitle(0), '炼气一层');
     assert.equal(getCultivationTitle(500), '筑基后期');
     assert.equal(getCultivationTitle(1500), '结丹宗师');
+});
+
+test('player progress badge is derived from real experience', () => {
+    assert.deepEqual(getPlayerProgressBadge(520), {
+        title: '筑基后期',
+        expText: '修为 520'
+    });
 });
 
 test('lobby exposes every configured level in order', () => {

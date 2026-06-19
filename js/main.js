@@ -1,12 +1,14 @@
 // js/main.js
 import { MatchEngine, HERB_DATABASE, LEVEL_CONFIGS } from './match-engine.js';
 import { RefinePhysics } from './refine-physics.js';
-import { getCultivationTitle, getLobbyLevelIds, getReviveTargetState } from './game-rules.js';
+import { getCultivationTitle, getPlayerProgressBadge, getLobbyLevelIds, getReviveTargetState } from './game-rules.js';
 import { LeaderboardService } from './leaderboard-service.js';
 
 // --- 1. 微信原生小游戏组件系统 ---
 const canvas = wx.createCanvas();
 const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = true;
+ctx.imageSmoothingQuality = 'high';
 
 wx.onError((err) => {
     console.error("小游戏运行错误:", err);
@@ -61,9 +63,6 @@ const ASSETS_TO_LOAD = {
     
     // UI 美术强化资产
     cave_bg: 'assets/cave_bg.jpg',
-    coin: 'assets/coin.png',
-    jade: 'assets/jade.png',
-    energy: 'assets/energy.png',
     card_bg: 'assets/card_bg.png',
     card_locked_bg: 'assets/card_locked_bg.png',
     scroll_paper_bg: 'assets/scroll_paper_bg.jpg'
@@ -214,7 +213,7 @@ class MainGame {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         ctx.fillStyle = '#d4af37';
-        ctx.font = `${20 * scaleY}px serif`;
+        ctx.font = `${20 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('正在载入洞府药理...', canvas.width / 2, canvas.height / 2 - 20 * scaleY);
         
@@ -422,7 +421,7 @@ class MainGame {
 
         // 2. 主标题
         ctx.fillStyle = '#f7eacc';
-        ctx.font = `bold ${44 * scaleY}px serif`;
+        ctx.font = `bold ${44 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.shadowColor = 'rgba(212, 175, 55, 0.5)';
         ctx.shadowBlur = 15;
@@ -485,7 +484,7 @@ class MainGame {
         this.roundRect(x, y, w, h, 4, true, true);
 
         ctx.fillStyle = '#ffd700';
-        ctx.font = `bold ${13 * scaleY}px serif`;
+        ctx.font = `bold ${13 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(text, x + w / 2, y + h / 2 + 5 * scaleY);
 
@@ -494,7 +493,7 @@ class MainGame {
 
     // --- 5. 界面绘制：消除游玩页 (Playing) ---
     renderPlayScreen() {
-        // A. 顶部资源条 (像素级还原)
+        // A. 顶部真实对局信息
         const topBarGrad = ctx.createLinearGradient(0, 0, 0, 60 * scaleY);
         topBarGrad.addColorStop(0, '#1d1b18');
         topBarGrad.addColorStop(1, '#11100e');
@@ -507,10 +506,11 @@ class MainGame {
         ctx.lineTo(canvas.width, 60 * scaleY);
         ctx.stroke();
 
-        // 顶部左侧徽章 (等级 28 | 炼丹师)
+        // 顶部左侧徽章：玩家真实修为
         const badgeR = 21 * scaleY;
         const badgeX = 35 * scaleX;
         const badgeY = 30 * scaleY;
+        const progressBadge = getPlayerProgressBadge(this.exp);
         
         // 外青玉圈
         ctx.fillStyle = '#1d5134';
@@ -522,40 +522,38 @@ class MainGame {
         ctx.stroke();
         
         ctx.fillStyle = '#ffd700';
-        ctx.font = `bold ${9 * scaleY}px serif`;
+        ctx.font = `bold ${9.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText('等级 28', badgeX, badgeY - 2 * scaleY);
+        ctx.fillText(progressBadge.title, badgeX, badgeY - 2 * scaleY);
         ctx.fillStyle = '#e5dcc6';
-        ctx.font = `${7 * scaleY}px sans-serif`;
-        ctx.fillText('炼丹师', badgeX, badgeY + 8 * scaleY);
+        ctx.font = `bold ${7.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
+        ctx.fillText(progressBadge.expText, badgeX, badgeY + 9 * scaleY);
 
-        // 顶部右侧资源条 (金币, 灵石, 体力)
-        const startResX = 110 * scaleX;
-        const resW = 75 * scaleX;
+        // 顶部右侧只展示真实局内状态，不展示未实现的货币/体力。
+        const startResX = 118 * scaleX;
+        const resW = 96 * scaleX;
         const resH = 22 * scaleY;
         const resGap = 8 * scaleX;
         
-        const drawResource = (x, imgKey, val) => {
+        const drawMetric = (x, label, val) => {
             ctx.fillStyle = '#09090b';
             ctx.strokeStyle = '#4a3c2c';
             ctx.lineWidth = 1;
             this.roundRect(x, 19 * scaleY, resW, resH, 11 * scaleY, true, true);
-            
-            // 绘制精美小图图标代替 Emoji 字符
-            const img = this.loadedImages[imgKey];
-            if (img) {
-                ctx.drawImage(img, x + 6 * scaleX, 19 * scaleY + 4 * scaleY, 14 * scaleX, 14 * scaleY);
-            }
-            
+
+            ctx.fillStyle = '#8fa597';
+            ctx.font = `bold ${7 * scaleY}px sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(label, x + 8 * scaleX, 19 * scaleY + 14 * scaleY);
+
             ctx.fillStyle = '#e5dcc6';
             ctx.font = `bold ${8 * scaleY}px sans-serif`;
             ctx.textAlign = 'right';
             ctx.fillText(val, x + resW - 6 * scaleX, 19 * scaleY + 15 * scaleY);
         };
         
-        drawResource(startResX, 'coin', '12,850');
-        drawResource(startResX + resW + resGap, 'jade', '340');
-        drawResource(startResX + (resW + resGap) * 2, 'energy', '110/120');
+        drawMetric(startResX, '丹分', String(this.engine.score || 0));
+        drawMetric(startResX + resW + resGap, '炉位', `${this.engine.slots.length}/7`);
 
         // B. 关卡挂幅与剩余火力
         ctx.fillStyle = 'rgba(74, 63, 49, 0.85)';
@@ -563,7 +561,7 @@ class MainGame {
         ctx.strokeStyle = 'rgba(212, 175, 55, 0.4)';
         ctx.strokeRect(canvas.width / 2 - 80 * scaleX, 70 * scaleY, 160 * scaleX, 24 * scaleY);
         ctx.fillStyle = '#ffd700';
-        ctx.font = `bold ${10 * scaleY}px serif`;
+        ctx.font = `bold ${10 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(this.engine.level.name, canvas.width / 2, 70 * scaleY + 16 * scaleY);
 
@@ -649,7 +647,7 @@ class MainGame {
             // 药材名
             const herb = HERB_DATABASE[typeId];
             ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${7 * scaleY}px serif`;
+            ctx.font = `bold ${9.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(herb.name, 0, -cardH / 2 + 10 * scaleY);
 
@@ -689,7 +687,7 @@ class MainGame {
         this.roundRect(cX - 30 * scaleX, cY + 36 * scaleY, 60 * scaleX, 14 * scaleY, 2, true, true);
         
         ctx.fillStyle = '#ffd700';
-        ctx.font = `${7 * scaleY}px sans-serif`;
+        ctx.font = `bold ${9 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('青铜炼丹炉', cX, cY + 46 * scaleY);
     }
@@ -783,12 +781,12 @@ class MainGame {
             
             // 星级与名称
             ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${9 * scaleY}px serif`;
+            ctx.font = `bold ${12.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(herb.name, renderX, renderY - contentH * 0.33);
             
             ctx.fillStyle = '#8c6e2b';
-            ctx.font = `${7 * scaleY}px sans-serif`;
+            ctx.font = `bold ${9 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
             ctx.fillText(herb.stars, renderX, renderY + contentH * 0.39);
 
             // 绘制本草 PNG 插图
@@ -845,7 +843,7 @@ class MainGame {
             
             // 缩微卡牌文字与插画
             ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${5.5 * scaleY}px serif`;
+            ctx.font = `bold ${8 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(herb.name, x + slotW / 2, slotY + 8 * scaleY);
 
@@ -940,7 +938,7 @@ class MainGame {
 
         // 2. 标题与状态区
         ctx.fillStyle = '#1c1511';
-        ctx.font = `bold ${13 * scaleY}px serif`;
+        ctx.font = `bold ${13 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('准备合凝', canvas.width / 2, frameY + 24 * scaleY);
 
@@ -1007,7 +1005,7 @@ class MainGame {
 
         // 绘制石台边缘刻印文字
         ctx.fillStyle = '#d4af37';
-        ctx.font = `bold ${7 * scaleY}px serif`;
+        ctx.font = `bold ${9.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('巽 离 坤 兑 乾 坎 艮 震', platformX, platformY + baseH + 8 * scaleY);
 
@@ -1140,7 +1138,7 @@ class MainGame {
         ctx.shadowColor = sealGlow;
         ctx.shadowBlur = 15 * scaleX;
         ctx.fillStyle = sealColor;
-        ctx.font = `bold ${30 * scaleY}px KaiTi, STKaiti, serif`;
+        ctx.font = `bold ${30 * scaleY}px KaiTi, STKaiti, "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         // 浮动动画，让汉字上下微颤
         const floatY = Math.sin(Date.now() / 200) * 3 * scaleY;
         ctx.fillText(sealChar, cauldronX, cauldronY - cauldronH - 22 * scaleY + floatY);
@@ -1174,7 +1172,7 @@ class MainGame {
         this.roundRect(activeBarX, activeBarY + activeBarH * 0.68, activeBarW, activeBarH * 0.32, 2, true, false);
 
         // 绘制对应的温控标注文字 (垂直书写在测温条左侧)
-        ctx.font = `bold ${8 * scaleY}px serif`;
+        ctx.font = `bold ${8 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         
         ctx.fillStyle = '#b71c1c';
@@ -1265,7 +1263,7 @@ class MainGame {
             this.roundRect(btnStartX, y, subBtnW, subBtnH, 4, true, true);
 
             ctx.fillStyle = '#ffd700';
-            ctx.font = `bold ${9 * scaleY}px serif`;
+            ctx.font = `bold ${12.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(text, btnStartX + subBtnW / 2, y + subBtnH / 2 + 3 * scaleY);
 
@@ -1374,7 +1372,7 @@ class MainGame {
         // 8. 绘制金色水墨书法感引导文字
         ctx.save();
         ctx.textAlign = 'center';
-        ctx.font = `bold ${15 * scaleY}px KaiTi, STKaiti, serif`;
+        ctx.font = `bold ${15 * scaleY}px KaiTi, STKaiti, "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         
         // 渐变金色字填充
         const gradText = ctx.createLinearGradient(
@@ -1441,12 +1439,12 @@ class MainGame {
         this.roundRect(x, y, w, h, 8, true, true);
 
         ctx.fillStyle = '#a63a3a';
-        ctx.font = `bold ${16 * scaleY}px serif`;
+        ctx.font = `bold ${16 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('💥 炸炉了！ 💥', canvas.width / 2, y + 36 * scaleY);
 
         ctx.fillStyle = '#3e2723';
-        ctx.font = `bold ${20 * scaleY}px serif`;
+        ctx.font = `bold ${20 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText('丹毁人伤', canvas.width / 2, y + 68 * scaleY);
 
         ctx.fillStyle = '#4e3629';
@@ -1490,15 +1488,15 @@ class MainGame {
 
         // 书法大字
         ctx.fillStyle = '#4e2712';
-        ctx.font = `bold ${18 * scaleY}px serif`;
+        ctx.font = `bold ${18 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText(`恭喜炼制${this.engine.level.targetElixir}`, cX, scrollY + 162 * scaleY);
         
         ctx.fillStyle = '#7b5b3f';
-        ctx.font = `bold ${10 * scaleY}px serif`;
+        ctx.font = `bold ${10 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText('仅0.3%修士达成此成就', cX, scrollY + 182 * scaleY);
 
         ctx.fillStyle = '#5d3f2e';
-        ctx.font = `bold ${12 * scaleY}px serif`;
+        ctx.font = `bold ${12 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText(`总分: ${this.score.toLocaleString()}`, cX, scrollY + 215 * scaleY);
 
         ctx.fillStyle = '#7b5b3f';
@@ -1521,7 +1519,7 @@ class MainGame {
         ctx.strokeStyle = '#ffd700';
         this.roundRect(cX - 105 * scaleX, btnY, btnW, btnH, 4, true, true);
         ctx.fillStyle = '#fff';
-        ctx.font = `bold ${11 * scaleY}px serif`;
+        ctx.font = `bold ${11 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText('🪷 分享', cX - 105 * scaleX + btnW / 2, btnY + 20 * scaleY);
         this.touchZones.push({ x: cX - 105 * scaleX, y: btnY, w: btnW, h: btnH, callback: () => this.showPoster() });
 
@@ -1533,7 +1531,7 @@ class MainGame {
         ctx.strokeStyle = '#ffd700';
         this.roundRect(cX + 15 * scaleX, btnY, btnW, btnH, 4, true, true);
         ctx.fillStyle = '#fff';
-        ctx.font = `bold ${11 * scaleY}px serif`;
+        ctx.font = `bold ${11 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText('🚪 返回', cX + 15 * scaleX + btnW / 2, btnY + 20 * scaleY);
         this.touchZones.push({ x: cX + 15 * scaleX, y: btnY, w: btnW, h: btnH, callback: () => this.backToLobby() });
 
@@ -1592,7 +1590,7 @@ class MainGame {
         this.roundRect(x, y, w, h, 8 * scaleX, true, true);
 
         ctx.fillStyle = '#4e2712';
-        ctx.font = `bold ${20 * scaleY}px serif`;
+        ctx.font = `bold ${20 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('全服丹榜', canvas.width / 2, y + 38 * scaleY);
 
@@ -1647,7 +1645,7 @@ class MainGame {
         this.roundRect(x, y, w, h, 6, true, true);
 
         ctx.fillStyle = '#3e2723';
-        ctx.font = `bold ${16 * scaleY}px serif`;
+        ctx.font = `bold ${16 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('修真界快报', canvas.width / 2, y + 34 * scaleY);
 
@@ -1656,11 +1654,11 @@ class MainGame {
         ctx.strokeRect(x + 12 * scaleX, y + 46 * scaleY, w - 24 * scaleX, h - 58 * scaleY);
 
         ctx.fillStyle = '#6d5843';
-        ctx.font = `${9 * scaleY}px serif`;
+        ctx.font = `${9 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText('恭喜道友', canvas.width / 2, y + 74 * scaleY);
 
         ctx.fillStyle = '#277c54';
-        ctx.font = `bold ${20 * scaleY}px serif`;
+        ctx.font = `bold ${20 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText('云游散修', canvas.width / 2, y + 104 * scaleY);
 
         ctx.fillStyle = '#ffe99b';
@@ -1671,7 +1669,7 @@ class MainGame {
         ctx.font = `${10 * scaleY}px sans-serif`;
         ctx.fillText(`于洞府中淬炼九天，成功炼成`, canvas.width / 2, y + 220 * scaleY);
         ctx.fillStyle = '#b8860b';
-        ctx.font = `bold ${12 * scaleY}px serif`;
+        ctx.font = `bold ${12 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", "Microsoft YaHei", sans-serif`;
         ctx.fillText(`${this.engine.level.targetElixir} (${this.engine.level.elixirGrade})`, canvas.width / 2, y + 242 * scaleY);
 
         // 二维码框

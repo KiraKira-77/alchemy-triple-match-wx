@@ -4,6 +4,14 @@ export function getCultivationTitle(exp) {
     return '炼气一层';
 }
 
+export function getPlayerProgressBadge(exp) {
+    const safeExp = Number.isFinite(Number(exp)) ? Math.max(0, Math.floor(Number(exp))) : 0;
+    return {
+        title: getCultivationTitle(safeExp),
+        expText: `修为 ${safeExp}`
+    };
+}
+
 export function getLobbyLevelIds(levelConfigs) {
     return Object.keys(levelConfigs)
         .map(Number)
