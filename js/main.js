@@ -1,8 +1,8 @@
 // js/main.js
 import { MatchEngine, HERB_DATABASE, LEVEL_CONFIGS } from './match-engine.js';
 import { RefinePhysics } from './refine-physics.js';
-import { getCultivationTitle, getPlayerProgressBadge, getLobbyLevelIds, getReviveTargetState } from './game-rules.js';
-import { LeaderboardService } from './leaderboard-service.js';
+import { getCultivationTitle, getPlayerProgressBadge, getLobbyLevelIds, getReviveTargetState, calculateFinalScore } from './game-rules.js';
+import { LeaderboardService, getLeaderboardFailureText } from './leaderboard-service.js';
 
 // --- 1. 微信原生小游戏组件系统 ---
 const canvas = wx.createCanvas();
@@ -65,11 +65,15 @@ const ASSETS_TO_LOAD = {
     cave_bg: 'assets/cave_bg.jpg',
     card_bg: 'assets/card_bg.png',
     card_locked_bg: 'assets/card_locked_bg.png',
-    scroll_paper_bg: 'assets/scroll_paper_bg.jpg'
+    scroll_paper_bg: 'assets/scroll_paper_bg.jpg',
+    elixir_zhujidan: 'assets/elixirs/zhujidan.png',
+    elixir_huanhundan: 'assets/elixirs/huanhundan.png',
+    elixir_feixiandan: 'assets/elixirs/feixiandan.png',
+    elixir_jindan: 'assets/elixirs/jindan.png'
 };
 
 const REVIVE_AD_UNIT_ID = '';
-const CLOUD_ENV_ID = '';
+const CLOUD_ENV_ID = 'cloud1-d8g0evrmw5ed97fc1';
 const DAILY_LEADERBOARD_LEVEL_ID = 3;
 
 class AudioManager {
@@ -644,17 +648,10 @@ class MainGame {
                 this.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 2, true, true);
             }
 
-            // 药材名
-            const herb = HERB_DATABASE[typeId];
-            ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${9.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(herb.name, 0, -cardH / 2 + 10 * scaleY);
-
-            // 插图
+            // 插图 (无名字，完美垂直居中)
             const imgHerb = this.loadedImages[Object.keys(ASSETS_TO_LOAD)[typeId + 3]]; // 索引映射
             if (imgHerb) {
-                ctx.drawImage(imgHerb, -12 * scaleX, -cardH / 2 + 14 * scaleY, 24 * scaleX, 24 * scaleY);
+                ctx.drawImage(imgHerb, -12 * scaleX, -12 * scaleY, 24 * scaleX, 24 * scaleY);
             }
             
             ctx.restore();
@@ -779,21 +776,16 @@ class MainGame {
             const contentW = actualW;
             const contentH = actualH;
             
-            // 星级与名称
-            ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${12.5 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(herb.name, renderX, renderY - contentH * 0.33);
-            
+            // 星级 (已移除中文药材名字)
             ctx.fillStyle = '#8c6e2b';
             ctx.font = `bold ${9 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
-            ctx.fillText(herb.stars, renderX, renderY + contentH * 0.39);
+            ctx.fillText(herb.stars, renderX, renderY + contentH * 0.37);
 
-            // 绘制本草 PNG 插图
+            // 绘制本草 PNG 插图 (无名字，完美居中并适当放大)
             const imgHerb = this.loadedImages[Object.keys(ASSETS_TO_LOAD)[card.typeId + 3]];
             if (imgHerb) {
-                const herbSize = Math.min(42 * scaleX, contentW * 0.62);
-                ctx.drawImage(imgHerb, renderX - herbSize / 2, renderY - herbSize * 0.36, herbSize, herbSize);
+                const herbSize = Math.min(48 * scaleX, contentW * 0.70);
+                ctx.drawImage(imgHerb, renderX - herbSize / 2, renderY - herbSize / 2 - 5 * scaleY, herbSize, herbSize);
             }
             
             // 被遮挡的卡牌在插图之上再覆盖一层半透明暗灰，显示“锁定”状态，但仍保持可见
@@ -841,15 +833,10 @@ class MainGame {
 
             const herb = HERB_DATABASE[card.typeId];
             
-            // 缩微卡牌文字与插画
-            ctx.fillStyle = '#1a150e';
-            ctx.font = `bold ${8 * scaleY}px "STKaiti", "KaiTi", "PingFang SC", "Heiti SC", sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(herb.name, x + slotW / 2, slotY + 8 * scaleY);
-
+            // 缩微卡牌插图 (已移除中文药材名字，完美居中)
             const imgHerb = this.loadedImages[Object.keys(ASSETS_TO_LOAD)[card.typeId + 3]];
             if (imgHerb) {
-                ctx.drawImage(imgHerb, x + slotW / 2 - 10 * scaleX, slotY + 11 * scaleY, 20 * scaleX, 22 * scaleY);
+                ctx.drawImage(imgHerb, x + slotW / 2 - 10 * scaleX, slotY + 8 * scaleY, 20 * scaleX, 22 * scaleY);
             }
         });
     }
@@ -1475,16 +1462,37 @@ class MainGame {
 
         const cX = canvas.width / 2;
         
-        // 旋转的金丹
+        // 呼吸效果的背景金光
+        const glowRadius = (32 + Math.sin(Date.now() / 300) * 3) * scaleY;
         ctx.fillStyle = 'rgba(212, 175, 55, 0.35)';
         ctx.beginPath();
-        ctx.arc(cX, scrollY + 95 * scaleY, 32 * scaleY, 0, Math.PI * 2);
+        ctx.arc(cX, scrollY + 95 * scaleY, glowRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = '#ffd700';
-        ctx.font = `${40 * scaleY}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText('🟡', cX, scrollY + 106 * scaleY);
+        // 根据成丹类型加载对应原画
+        let elixirKey = 'elixir_zhujidan';
+        const target = this.engine.level.targetElixir;
+        if (target === '九转还魂丹') elixirKey = 'elixir_huanhundan';
+        else if (target === '太乙飞仙丹') elixirKey = 'elixir_feixiandan';
+        else if (target === '九转金丹') elixirKey = 'elixir_jindan';
+
+        const imgElixir = this.loadedImages[elixirKey];
+        const rotAngle = (Date.now() / 1500) % (Math.PI * 2);
+        const elixirSize = 64 * scaleY;
+
+        ctx.save();
+        ctx.translate(cX, scrollY + 95 * scaleY);
+        ctx.rotate(rotAngle);
+        if (imgElixir) {
+            ctx.drawImage(imgElixir, -elixirSize / 2, -elixirSize / 2, elixirSize, elixirSize);
+        } else {
+            // 降级使用黄球Emoji
+            ctx.fillStyle = '#ffd700';
+            ctx.font = `${40 * scaleY}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText('🟡', 0, 11 * scaleY);
+        }
+        ctx.restore();
 
         // 书法大字
         ctx.fillStyle = '#4e2712';
@@ -1552,7 +1560,7 @@ class MainGame {
 
         if (!this.leaderboard.isAvailable()) {
             this.leaderboardLoading = false;
-            this.leaderboardStatus = '云开发未配置，无法读取全服丹榜';
+            this.leaderboardStatus = getLeaderboardFailureText('CLOUD_UNAVAILABLE', 'load');
             return;
         }
 
@@ -1563,7 +1571,7 @@ class MainGame {
             });
             this.leaderboardLoading = false;
             if (!result || !result.ok) {
-                this.leaderboardStatus = '全服丹榜读取失败';
+                this.leaderboardStatus = getLeaderboardFailureText(result && result.code, 'load');
                 return;
             }
             this.leaderboardEntries = result.entries || [];
@@ -1571,7 +1579,7 @@ class MainGame {
         } catch (err) {
             console.warn('读取排行榜失败:', err);
             this.leaderboardLoading = false;
-            this.leaderboardStatus = '全服丹榜读取失败';
+            this.leaderboardStatus = getLeaderboardFailureText('CLOUD_CALL_FAILED', 'load');
         }
     }
 
@@ -1889,10 +1897,13 @@ class MainGame {
             this.lastFailedState = null;
             this.triggerHaptic(false);
             
-            const baseScore = 10000;
-            const slotBonus = (7 - this.engine.slots.length) * 800;
-            const stepBonus = this.engine.steps * 50;
-            this.score = baseScore + slotBonus + stepBonus + 1500; // 简化结算
+            const refineStats = this.physics ? this.physics.getStats() : {};
+            this.score = calculateFinalScore({
+                matchScore: this.engine.score,
+                slotsRemaining: this.engine.slots.length,
+                stepsRemaining: this.engine.steps,
+                refineStats
+            });
             
             const expReward = this.currentLevelId === 3 ? 120 : (this.currentLevelId === 0 ? 20 : 50);
             this.exp += expReward;
@@ -1912,7 +1923,7 @@ class MainGame {
         }
 
         if (!this.leaderboard.isAvailable()) {
-            this.lastLeaderboardSubmitStatus = '云开发未配置，成绩未入榜';
+            this.lastLeaderboardSubmitStatus = getLeaderboardFailureText('CLOUD_UNAVAILABLE', 'submit');
             return;
         }
 
@@ -1926,11 +1937,11 @@ class MainGame {
             if (result && result.ok) {
                 this.lastLeaderboardSubmitStatus = result.updated ? '成绩已同步全服丹榜' : '已有更高成绩在榜';
             } else {
-                this.lastLeaderboardSubmitStatus = '成绩同步失败';
+                this.lastLeaderboardSubmitStatus = getLeaderboardFailureText(result && result.code, 'submit');
             }
         } catch (err) {
             console.warn('提交排行榜成绩失败:', err);
-            this.lastLeaderboardSubmitStatus = '成绩同步失败';
+            this.lastLeaderboardSubmitStatus = getLeaderboardFailureText('CLOUD_CALL_FAILED', 'submit');
         }
     }
 

@@ -8,7 +8,9 @@ const {
     getChinaDateKey,
     normalizeScoreSubmission,
     shouldReplaceScore,
-    toPublicLeaderboardEntry
+    toPublicLeaderboardEntry,
+    isCollectionMissingError,
+    isCollectionExistsError
 } = require('../cloudfunctions/submitScore/leaderboard-rules.js');
 
 test('date key uses China calendar day', () => {
@@ -59,6 +61,16 @@ test('public entry does not expose openid or document internals', () => {
         nickname: '丹师A1B2',
         score: 800
     });
+});
+
+test('database collection errors are classified for setup recovery', () => {
+    assert.equal(isCollectionMissingError({ errCode: -502005, message: 'collection not exists' }), true);
+    assert.equal(isCollectionMissingError(new Error('DATABASE_COLLECTION_NOT_EXIST')), true);
+    assert.equal(isCollectionMissingError(new Error('permission denied')), false);
+
+    assert.equal(isCollectionExistsError(new Error('collection already exists')), true);
+    assert.equal(isCollectionExistsError({ errCode: -502001, message: 'already exists' }), true);
+    assert.equal(isCollectionExistsError(new Error('collection not exists')), false);
 });
 
 test('cloud function rule copies stay in sync', () => {

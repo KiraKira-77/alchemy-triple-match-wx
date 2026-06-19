@@ -39,3 +39,49 @@ export function getReviveTargetState({ failedState, cardsRemaining, slotsRemaini
     if (cardsRemaining === 0 && slotsRemaining === 0) return 'REFINING';
     return 'PLAYING';
 }
+
+function toSafeNonNegativeNumber(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(0, number);
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+export function calculateRefineQualityScore(stats = {}) {
+    const stableTime = toSafeNonNegativeNumber(stats.stableTime);
+    const coldTime = toSafeNonNegativeNumber(stats.coldTime);
+    const hotTime = toSafeNonNegativeNumber(stats.hotTime);
+    const measuredTotal = stableTime + coldTime + hotTime;
+    const totalTime = Math.max(toSafeNonNegativeNumber(stats.totalTime), measuredTotal);
+
+    if (totalTime <= 0) return 0;
+
+    const stableRatio = stableTime / totalTime;
+    const stableBonus = Math.round(stableRatio * 3000);
+    const speedBonus = clamp(Math.round((12 - totalTime) * 200), 0, 600);
+    const coldPenalty = Math.round(coldTime * 150);
+    const hotPenalty = Math.round(hotTime * 400);
+
+    return clamp(stableBonus + speedBonus - coldPenalty - hotPenalty, 0, 3600);
+}
+
+export function calculateFinalScore({
+    matchScore = 0,
+    slotsRemaining = 0,
+    stepsRemaining = 0,
+    refineStats = {}
+} = {}) {
+    const baseScore = 10000;
+    const completionBonus = 1500;
+    const safeSlots = clamp(Math.floor(toSafeNonNegativeNumber(slotsRemaining)), 0, 7);
+    const safeSteps = Math.floor(toSafeNonNegativeNumber(stepsRemaining));
+    const safeMatchScore = Math.floor(toSafeNonNegativeNumber(matchScore));
+    const slotBonus = (7 - safeSlots) * 800;
+    const stepBonus = safeSteps * 50;
+    const refineBonus = calculateRefineQualityScore(refineStats);
+
+    return baseScore + completionBonus + safeMatchScore + slotBonus + stepBonus + refineBonus;
+}

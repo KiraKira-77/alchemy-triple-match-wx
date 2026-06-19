@@ -6,7 +6,9 @@ import {
     getPlayerProgressBadge,
     getLobbyLevelIds,
     getEffectiveLevelSeed,
-    getReviveTargetState
+    getReviveTargetState,
+    calculateRefineQualityScore,
+    calculateFinalScore
 } from '../js/game-rules.js';
 import { LEVEL_CONFIGS } from '../js/match-engine.js';
 
@@ -51,4 +53,40 @@ test('revive during match play returns to match play', () => {
         cardsRemaining: 12,
         slotsRemaining: 7
     }), 'PLAYING');
+});
+
+test('refine quality rewards stable temperature control', () => {
+    const stable = calculateRefineQualityScore({
+        stableTime: 8,
+        coldTime: 1,
+        hotTime: 0,
+        totalTime: 9
+    });
+
+    const unstable = calculateRefineQualityScore({
+        stableTime: 4,
+        coldTime: 3,
+        hotTime: 2,
+        totalTime: 9
+    });
+
+    assert.ok(stable > unstable);
+    assert.equal(stable, 3117);
+    assert.equal(unstable, 683);
+});
+
+test('final score includes match score and refine quality', () => {
+    const score = calculateFinalScore({
+        matchScore: 4600,
+        slotsRemaining: 1,
+        stepsRemaining: 12,
+        refineStats: {
+            stableTime: 8,
+            coldTime: 1,
+            hotTime: 0,
+            totalTime: 9
+        }
+    });
+
+    assert.equal(score, 24617);
 });

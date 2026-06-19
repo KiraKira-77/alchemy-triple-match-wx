@@ -57,10 +57,39 @@ function toPublicLeaderboardEntry(record, index) {
     };
 }
 
+function getErrorText(err) {
+    return [
+        err && err.errCode,
+        err && err.errcode,
+        err && err.code,
+        err && err.message,
+        err && err.errMsg,
+        err && String(err)
+    ].filter(Boolean).join(' ');
+}
+
+function isCollectionMissingError(err) {
+    const text = getErrorText(err).toLowerCase();
+    return text.includes('-502005')
+        || text.includes('database_collection_not_exist')
+        || text.includes('collection not exist')
+        || text.includes('collection not exists');
+}
+
+function isCollectionExistsError(err) {
+    const text = getErrorText(err).toLowerCase();
+    return text.includes('-502001')
+        || text.includes('already exist')
+        || text.includes('already exists')
+        || text.includes('collection exist');
+}
+
 module.exports = {
     getChinaDateKey,
     normalizeScoreSubmission,
     shouldReplaceScore,
     toPublicLeaderboardEntry,
+    isCollectionMissingError,
+    isCollectionExistsError,
     MAX_SCORE
 };
